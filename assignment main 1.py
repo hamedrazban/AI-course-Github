@@ -4,19 +4,18 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pprint import pprint
 import pandas as pd
-# from sklearn.model_selection import train_test_split
-# from sklearn.preprocessing import StandardScaler
-# from sklearn.neural_network import MLPClassifier
-# from sklearn import metrics
-# import numpy as np
-# import pickle
-# import matplotlib.pyplot as plt
-# import pandas as pd
+import joblib
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from sklearn.pipeline import make_pipeline
+from sklearn.neural_network import MLPRegressor
+from sklearn.compose import TransformedTargetRegressor
 
 
 
 # kp = 1.47* 10 ** 5
 # kn = 1.65* 10 ** 5
+
 class pid_control():
 
     def __init__(self,RPM,Ttime):
@@ -85,10 +84,11 @@ class pid_control():
         fL = np.polyval ( fL_poly , Delta )
         NominalForce=np.polyval(nominal_force_poly,self.RPM)
 
-        FBX = 2 * NominalForce * fD
-        FBY=2 * NominalForce * fL
-        TZB= FBY * 41.5
-        return FBX , FBY , TZB
+
+        FXB = 2 * NominalForce * fD
+        FYB=2 * NominalForce * fL
+        TZB= FYB * 41.5
+        return FXB , FYB , TZB
 
 
     # -------------------simulation of ship maneuvering-------------------------
@@ -107,28 +107,29 @@ class pid_control():
              - 1.31807215001418 * 10 ** (-10) * FYB + 1.72604686311381 * 10 ** (-10) * TZB + \
              2.63614430002837 * 10 ** (-5) * np.sin ( X_old [ 2 ] * np.pi / 180 )
         return np.array([y1,y2,y3,y4,y5,y6])
-    def Runge_Kutta (self,fun,dt):
-        k1 = dt * fun(X_old)
-        k2 = dt * fun(X_old + 0.5 * k1)
-        k3 = dt * fun(X_old + 0.5 * k2)
-        k4 = dt * fun(X_old + k3)
-        return X_old + (1 / 6) * k1 + (1 / 3) * k2 + (1 / 3) * k3 + (1 / 6) * k4
+    # def Runge_Kutta (self,fun,dt):
+    #     k1 = dt * fun(X_old)
+    #     k2 = dt * fun(X_old + 0.5 * k1)
+    #     k3 = dt * fun(X_old + 0.5 * k2)
+    #     k4 = dt * fun(X_old + k3)
+    #     return X_old + (1 / 6) * k1 + (1 / 3) * k2 + (1 / 3) * k3 + (1 / 6) * k4
 
 
     # -------------------begin PID control-------------------------
     def pid (self):
         desire_phi = 45  # degree, because Delta is in degree
 
-        Kp = 30
+        Kp = 10
         Ki = 0
-        Kd = 7000
+        Kd = 0
 
         dt = 0.1
         # w=100/60
-        phi_0=random.random()*np.pi
+        phi_0=random.random()*180
         T = np.arange(0,self.Ttime,dt)
         X_state = np.zeros((6, len(T)))
-        X_state[:,0] = np.array([0, 0, phi_0, 0, 0, 0])    # initial the condition
+        X_state[:,0] = np.array([0, 0, 51, 0, 0, 0])    # initial the condition
+
         U = np.zeros(T.shape)
         U_rate = np.zeros(T.shape)
         forces=np.zeros((3,len(T)))
@@ -139,7 +140,7 @@ class pid_control():
 
         for i in range(0, len(T)-1):
             # PID controller
-            e = X_state[2, i]*180/np.pi - desire_phi
+            e = X_state[2, i] - desire_phi
             if abs(e)< 0.1:
                 break
 
@@ -150,9 +151,9 @@ class pid_control():
             if U[i]<-45:
                 U[i]=-45
             if i>0:
-                if (U[i]-U[i-1])/(T[i]-T[i-1]) > 3.7:
-                    U[i]=3.7*(T[i]-T[i-1])+U[i-1]
-                U_rate[i]=(U[i]-U[i-1])/(T[i-1]-T[i])
+                if (U[i]-U[i-1])/dt > 3.7:
+                    U[i]=3.7*dt+U[i-1]
+                U_rate[i]=(U[i]-U[i-1])/dt
             e_previous = e
             FXB , FYB , TZB = self.get_force_torque (U[i] )
             forces[:,i]=np.array([FXB,FYB,TZB])
@@ -165,9 +166,9 @@ class pid_control():
 
             # ensure phi within [-pi, pi]
             # if X_state[2, i] > np.pi:
-            #     X_state[2, i] -= 2 * np.pi
+            #     X_state[2, i] -= np.pi*2
             # elif X_state[2, i] <= -np.pi:
-            #     X_state[2, i] += 2 * np.pi
+            #     X_state[2, i] += np.pi*2
 
             X_state[:,i+1] = X_state[:,i] + dt * (K1 / 6 + K2 / 3 + K3 / 3 + K4 / 6)
         return e,T,X_state,U,U_rate,forces
@@ -177,9 +178,9 @@ class pid_control():
         fig4=plt.figure(figsize=(7,7))
         ax_PID=fig4.add_subplot(321)
         ax_PID.plot(T,U,"b--",label="Delta")
-        ax_PID.plot(T,X_state[2,:]*180/np.pi,"r-",label="phi")
+        ax_PID.plot(T,X_state[2,:],"r-",label="phi")
 
-        ax_PID.plot(T,30*np.ones(T.shape),"g--",linewidth=0.5,label="desired phi")
+        ax_PID.plot(T,45*np.ones(T.shape),"g--",linewidth=0.5,label="desired phi")
         ax_PID.plot(T,45*np.ones(T.shape),"k--",linewidth=0.5, label="Ruder max angel")
         ax_PID.set_xlabel("time (S)")
         ax_PID.set_ylabel("Degree")
@@ -208,110 +209,114 @@ class pid_control():
 
         ax_algles=fig4.add_subplot(325)
         ax_algles.plot(T,U_rate,'r-',label='Rudder changing rate')
-        ax_algles.plot(T,X_state[5,:]*180/np.pi,'b-',label='heading changing rate')
+        ax_algles.plot(T,X_state[5,:],'b-',label='heading changing rate')
         ax_algles.legend()
         plt.tight_layout()
 
 
         plt.show()
-        plt.savefig('pid-fig.jpg')
+        # plt.savefig('pid-fig.jpg')
 
 
 ##############################data generation######################################
-
+s=pid_control(80,2000)
+s.plot_pid()
 sucess_num=0
 data=np.zeros((1,9))
 RPM=80
-Ttime=10000
-test_num=300
-for i in range (test_num):
-    pid_data=pid_control(RPM,Ttime)
-    e,T,X_state,U,U_rate,forces=pid_data.pid()
-    print(e)
-    if e<=5:
-        sucess_num+=1
-        a=np.hstack((X_state,forces))
-        data=np.vstack((data,a))
-        print(sucsess_num)
-        print(data)
-data = pd.DataFrame(data, columns=['x', 'y', 'psi', 'u', 'v', 'r', 'Fx','Fy','Yaw_torque'])
-result_file = "./pid_data.csv"
-data.to_csv(result_file)
-
+Ttime=500
+test_num=500
+# for i in range (test_num):
+#     pid_data=pid_control(RPM,Ttime)
+#     e,T,X_state,U,U_rate,forces=pid_data.pid()
+#     print("error:",e)
+#     if abs(e)<=5:
+#         sucess_num+=1
+#         a=np.concatenate((X_state.T,forces.T),axis=1)
+#
+#         data=np.vstack((data,a))
+#
+#         print("number of succeed controls",sucess_num)
+#
+# data = pd.DataFrame(data, columns=['x', 'y', 'phi', 'v_surge', 'v_sway', 'phi_dot', 'FBX','FBY','TBZ'])
+# result_file = "./pid_data.csv"
+# data.to_csv(result_file)
+#
 
 
 if False:
-    # read the data file
-    iris=(pd.read_csv('iris.data',sep=',')).values
-    # split the input and output
-    x=np.zeros((149,4))
-    y=[]
-    for i in range(149):
-        y.append(iris[i,4])
-        for j in range(4):
-            x[i,j]=iris[i,j]
-    y=np.array(y)
-    # split data set to train and test sets
-    # initial heading is input, forces and velocities and rudder angle are output
-    x_train,x_test,y_train,y_test=train_test_split(x,y,test_size=.2,shuffle=True)
-    scaler=StandardScaler().fit(x_train)
-    x_train_N=scaler.transform(x_train)
-    x_test_N=scaler.transform(x_test)
-    # print(x_train.shape)      `
-    n=30
-    scores=np.zeros(n)
-    scores_N=np.zeros(n)
-    scores_s=np.zeros(n)
-    perceptron=np.zeros(n)
-    # using for loop to test the number of perceptrons
-    for i in range(n):
-        clf=MLPClassifier(hidden_layer_sizes=(3+i*2),solver='sgd',activation='logistic',batch_size=3,learning_rate='constant',learning_rate_init=0.001,max_iter=1000,shuffle=True)
-        clf_N=MLPClassifier(hidden_layer_sizes=(3+i*2),solver='sgd',activation='logistic',batch_size=3,learning_rate='constant',learning_rate_init=0.001,max_iter=1000,shuffle=True)
-        clf_s=MLPClassifier(hidden_layer_sizes=(3+i*2),solver='adam',activation='relu',batch_size=3,learning_rate='constant',learning_rate_init=0.001,max_iter=1000,shuffle=True)
-        clf.fit(x_train,y_train)
-        clf_N.fit(x_train_N,y_train)
-        clf_s.fit(x_train_N,y_train)
-        y_predict=clf.predict(x_test)
-        y_predict_N=clf_N.predict(x_test_N)
-        y_predict_s=clf_s.predict(x_test_N)
-        score=clf.score(x_test,y_test)
-        score_N=clf_N.score(x_test_N,y_test)
-        score_s=clf_s.score(x_test_N,y_test)
-        scores[i]=score
-        scores_N[i]=score_N
-        scores_s[i]=score_s
-        perceptron[i]=3+2*i
-    fig=plt.figure(figsize=(8,8))
-    ax1=fig.add_subplot(211)
-    ax1.plot(perceptron,scores,'r--',label="unnormalized input")
-    ax1.plot(perceptron,scores_N,'b-',label="normalized input")
-    ax1.plot(perceptron,scores_s,'g--',label="adam solver")
-    ax1.set_title("network's score on different number of perceptrons")
-    ax1.set_xlabel("number of perceptrons")
-    ax1.set_ylabel("scores")
-    ax1.legend()
-    # plot loss curve
-    ax2=fig.add_subplot(212)
-    ax2.plot(clf.loss_curve_,'r*',label="unnormalized input")
-    ax2.plot(clf_N.loss_curve_,'b*',label="normalized input")
-    ax2.plot(clf_s.loss_curve_,'g*',label="adam solver")
-    ax2.set_title("loss curve")
-    ax2.set_xlabel("iteration number")
-    ax2.legend()
-    # cm=metrics.confusion_matrix(y_test,y_predict)
-    cm_N=metrics.confusion_matrix(y_test,y_predict_N)
-    print('report for not normaized data: ',metrics.classification_report(y_test,y_predict))
-    print('report for normaized data: ',metrics.classification_report(y_test,y_predict_N))
-    # writing reports down to a file
-    f=open('report.txt','a')
-    f.write('report for not normalized data: ')
-    s=metrics.classification_report(y_test,y_predict)
-    f.write(str(s))
-    f.write('\n')
-    f.write('report for normalized data: ')
-    s2=metrics.classification_report(y_test,y_predict_N)
-    f.write(str(s2))
+    S = pd.read_csv ( "./pid_data.csv" )
 
-    # metrics.ConfusionMatrixDisplay(confusion_matrix=cm,display_labels=('0','1',2)).plot()
-    metrics.ConfusionMatrixDisplay(confusion_matrix=cm_N,display_labels=('0','1',2)).plot()
-    plt.show()
+    data_list = S.iloc [ 0 :-1 , 1 :7 ]
+    Fx_label_list = S.iloc [ 1 : , 7 ]  # Fx
+    Fy_label_list = S.iloc [ 1 : , 8 ]  # Fy
+    Fz_label_list = S.iloc [ 1 : , 9 ]  # yaw torque
+    test_size = 0.1
+
+    # dataset and model for Fx
+    X1 , y1 = shuffle ( data_list.values , Fx_label_list , random_state=0 )
+    x1_train , x1_test , y1_train , y1_test = train_test_split ( X1 , y1 , test_size=test_size )
+    # print(x1_train.shape)
+    # print(x1_test.shape)
+
+    mlp1 = make_pipeline (
+        StandardScaler () ,
+        TransformedTargetRegressor (
+            regressor=MLPRegressor ( hidden_layer_sizes=(10 , 10) ,
+                                     activation='tanh' ,
+                                     max_iter=1000 ) ,
+            transformer=StandardScaler ()
+        )
+    )
+
+    mlp1.fit ( x1_train , y1_train.ravel () )
+    print ( 'mlp1.socre: ' , mlp1.score ( x1_test , y1_test ) )
+
+    # print('mlp1: ', mlp1.predict(np.array([-9.627573332,-2.014017937,-1.644032329,-0.00715073,0.015809356,0.003983173]).reshape(1,-1)))
+
+    # dataset and model for Fx
+    X2 , y2 = shuffle ( data_list.values , Fy_label_list , random_state=0 )
+    x2_train , x2_test , y2_train , y2_test = train_test_split ( X2 , y2 , test_size=test_size )
+    # print(x2_train.shape)
+    # print(x2_test.shape)
+
+    mlp2 = make_pipeline (
+        StandardScaler () ,
+        TransformedTargetRegressor (
+            regressor=MLPRegressor ( hidden_layer_sizes=(10 , 10) ,
+                                     activation='tanh' ,
+                                     max_iter=1000 ) ,
+            transformer=StandardScaler ()
+        )
+    )
+
+    mlp2.fit ( x2_train , y2_train.ravel () )
+    print ( 'mlp2.score: ' , mlp2.score ( x2_test , y2_test ) )
+
+    # print('mlp2: ', mlp2.predict(np.array([-9.627573332,-2.014017937,-1.644032329,-0.00715073,0.015809356,0.003983173]).reshape(1,-1)))
+
+    # dataset and model for Yaw torque
+    X3 , y3 = shuffle ( data_list.values , Fz_label_list , random_state=0 )
+    x3_train , x3_test , y3_train , y3_test = train_test_split ( X3 , y3 , test_size=test_size )
+    # print(x3_train.shape)
+    # print(x3_test.shape)
+
+    mlp3 = make_pipeline (
+        StandardScaler () ,
+        TransformedTargetRegressor (
+            regressor=MLPRegressor ( hidden_layer_sizes=(15 , 12) ,
+                                     activation='tanh' ,
+                                     max_iter=1000 ) ,
+            transformer=StandardScaler ()
+        )
+    )
+
+    mlp3.fit ( x3_train , y3_train.ravel () )
+    print ( 'mlp3.score: ' , mlp3.score ( x3_test , y3_test ) )
+
+    # print('mlp3: ', mlp3.predict(np.array([-9.627573332,-2.014017937,-1.644032329,-0.00715073,0.015809356,0.003983173]).reshape(1,-1)))
+
+    # save model
+    joblib.dump ( mlp1 , './saved model/mlp1.pkl' )
+    joblib.dump ( mlp2 , './saved model/mlp2.pkl' )
+    joblib.dump ( mlp3 , './saved model/mlp3.pkl' )
