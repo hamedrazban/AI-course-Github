@@ -1,0 +1,6 @@
+in 'python code' folder,
+
+1. run 'gen_data.py', it will generate 'docking_data.csv' and save to 'data file' folder
+2. run 'visual_data.py', to check how good the collected data is.
+3. run 'nn_construction.py', it will generate 2 NN models and save to "saved_model" folder
+4. run 'nn_controller.py', it will test the NN controller with a spcecific initial condition

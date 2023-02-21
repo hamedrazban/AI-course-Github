@@ -1,0 +1,4 @@
+1. run 'gen_data.py', it will generate DP_force_data.csv
+2. run 'visual_data.py', to check how good the collected data is.
+3. run 'nn_construction.py', it will generate 3 NN models and save to "saved model" folder
+4. run 'nn_controller.py', it will test the NN controller with a spcecific initial condition
